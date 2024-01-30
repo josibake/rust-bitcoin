@@ -104,11 +104,27 @@ impl From<io::Error> for Error {
     fn from(io: io::Error) -> Self { Error::Io(io) }
 }
 
-/// A block filter, as described by BIP 158.
+/// A block filter, as described by BIP 157.
+pub trait BlockFilter {
+    fn get_encoded(&self) -> &Vec<u8>;
+    fn filter_header(&self, previous_filter_header: &FilterHeader) -> FilterHeader;
+}
+
+/// A basic block filter, as described by BIP 158
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BlockFilter {
+pub struct BasicBlockFilter {
     /// Golomb encoded filter
     pub content: Vec<u8>,
+}
+
+impl BlockFilter for BasicBlockFilter {
+    fn get_encoded(&self) -> &Vec<u8> {
+        &self.content
+    }
+    fn filter_header(&self, previous_filter_header: &FilterHeader) -> FilterHeader {
+        let filter_hash = FilterHash::hash(self.content.as_slice());
+        filter_hash.filter_header(previous_filter_header)
+    }
 }
 
 impl FilterHash {
@@ -121,12 +137,12 @@ impl FilterHash {
     }
 }
 
-impl BlockFilter {
+impl BasicBlockFilter {
     /// Creates a new filter from pre-computed data.
-    pub fn new(content: &[u8]) -> BlockFilter { BlockFilter { content: content.to_vec() } }
+    pub fn new(content: &[u8]) -> BasicBlockFilter { BasicBlockFilter { content: content.to_vec() } }
 
     /// Computes a SCRIPT_FILTER that contains spent and output scripts.
-    pub fn new_script_filter<M, S>(block: &Block, script_for_coin: M) -> Result<BlockFilter, Error>
+    pub fn new_script_filter<M, S>(block: &Block, script_for_coin: M) -> Result<BasicBlockFilter, Error>
     where
         M: Fn(&OutPoint) -> Result<S, Error>,
         S: Borrow<Script>,
@@ -138,7 +154,7 @@ impl BlockFilter {
         writer.add_input_scripts(script_for_coin)?;
         writer.finish()?;
 
-        Ok(BlockFilter { content: out })
+        Ok(BasicBlockFilter { content: out })
     }
 
     /// Computes this filter's ID in a chain of filters (see [BIP 157]).
